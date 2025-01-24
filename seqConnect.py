@@ -5,12 +5,12 @@ Created on Tue Jan 14 15:05:05 2025
 @author: imbl
 """
 
-from PyQt5.QtWidgets import QPushButton, QLineEdit, QLabel
-# from PyQt5.QtWidgets import QPlainTextEdit, QComboBox, QCheckBox
+from PyQt5.QtWidgets import QPushButton, QLineEdit, QLabel, QCheckBox
+# from PyQt5.QtWidgets import QPlainTextEdit, QComboBox
 from PyQt5.QtWidgets import QTableWidget, QTableWidgetItem
 from PyQt5.QtCore import QTimer, QDateTime
 import csv, time
-from epics import caget, caput
+from epics import caget, caput, camonitor, camonitor_clear
 
 def initConnectGUI(GUI,app):
     # Define the Qt widgets to connect to he GUI
@@ -18,6 +18,8 @@ def initConnectGUI(GUI,app):
     # Set defatul values where required
     global GUIhandle
     GUIhandle=GUI # Make the GUI handle accessible
+    # GUI.closeEvent.connect(shutDown)
+    
     global AppHandle
     AppHandle=app
     
@@ -34,6 +36,10 @@ def initConnectGUI(GUI,app):
     GoToX=GUI.findChild(QLabel, "labelGoToX")
     global GoToY
     GoToY=GUI.findChild(QLabel, "labelGoToY")
+    global XPos
+    XPos=GUIhandle.findChild(QLabel, "labelXPos")
+    global YPos
+    YPos=GUIhandle.findChild(QLabel, "labelYPos")
     global Status
     Status=GUI.findChild(QLabel, "labelStatus")
     global ShowTime
@@ -54,7 +60,7 @@ def initConnectGUI(GUI,app):
     XPV=GUI.findChild(QLineEdit, "lineEditXPV")
     global YPV
     YPV=GUI.findChild(QLineEdit, "lineEditYPV")
-    UpdatePos()
+    UpdatePos() # Display the current positions
     global ADPV
     ADPV=GUI.findChild(QLineEdit, "lineEditADPV")
     global ShutterPV
@@ -82,12 +88,22 @@ def initConnectGUI(GUI,app):
     AbortButton=GUI.findChild(QPushButton, "pushButtonAbort")
     AbortButton.clicked.connect(Abort)
     
+    # Check boxes
+    global AutoGoto
+    AutoGoto=GUI.findChild(QCheckBox, "checkBoxAuto")
+    
 # Set up a timer
     global Timer
     Timer=QTimer()
     Timer.setSingleShot(True)
 
-# Event callback functions
+# Set monitors going on the X and Y positions
+    camonitor(XPV.text(), writer=None, callback=posXchange)
+    camonitor(YPV.text(), writer=None, callback=posYchange)
+
+
+#########################################################################
+#%% Event callback functions
 def GoTo():
     # Reponse to GoTo button click
     # Move motors to the position in the GoTo labels
@@ -98,7 +114,6 @@ def GoTo():
     YMotorPV=YPV.text()
     caput(XMotorPV,X)
     caput(YMotorPV,Y)
-    UpdatePos() # Read back thte positions into the edit boxes
     Status.setText('Idle')
 
 def GoSequence():
@@ -148,6 +163,8 @@ def TableClick():
     print('Table clicked on row: {0}. position X: {1}, Position Y: {2}, Time {3}'.format(row,X,Y,T))
     GoToX.setText(X)
     GoToY.setText(Y)
+    if AutoGoto.isChecked() :
+        GotoPos(row)
 
 def Snap():
     # Response to a click on the Snap button
@@ -185,19 +202,28 @@ def Expose():
 def Abort():
     caput(ShutterPV+':SHUTTEROPEN_CMD',0) # Close the shutter
     Timer.stop() # Stop the timer
-    Status.setText('Aborted')
+    Status.setText('Motion Aborted')
     
-# Helper functions
-def UpdatePos():
-    # Read the motor positions using CA, and populate the edit boxes
-    YMotorPV=YPV.text()
-    YPos=caget(YMotorPV)
-    labYPos=GUIhandle.findChild(QLabel, "labelYPos")
-    labYPos.setText('%.3f'%YPos)
-    XMotorPV=XPV.text()
-    XPos=caget(XMotorPV)
-    labXPos=GUIhandle.findChild(QLabel, "labelXPos")
-    labXPos.setText('%.3f'%XPos)
+############################################################################
+#%% Helper functions
+# Callback functions for camonitor...
+def posXchange(value=None, char_value=None, **kw):
+    XPos.setText('%.3f'%value)
+    
+def posYchange(value=None, char_value=None, **kw):
+    YPos.setText('%.3f'%value)
+
+def UpdatePos(): # Manually update the position
+    x=caget(XPV.text())
+    XPos.setText('%.3f'%x)
+    y=caget(YPV.text())
+    YPos.setText('%.3f'%y)
+
+def shutDown(): # Called when the window is closed.
+    caput(ShutterPV+':SHUTTEROPEN_CMD',0) # Close the shutter
+    Timer.stop() # Stop the timer
+    camonitor_clear(XPV.text()) # Stop camonitoring
+    camonitor_clear(YPV.text())
     
 def SetSnapEtime():
     SnapT=float(SnapTime.text())
@@ -238,10 +264,7 @@ def ShutterEtime(row):
     # caput(ShutterPV+':EXPOSUREREPEATS_CMD',1) # Set for a single cycle
     
 def GotoPos(row):
-    X=Table.item(row, 1).text()
-    Y=Table.item(row, 2).text()
-    XMotorPV=XPV.text()
-    YMotorPV=YPV.text()
-    caput(XMotorPV,X)
-    caput(YMotorPV,Y)
-    UpdatePos() # Read back thte positions into the edit boxes
+    x=Table.item(row, 1).text()
+    y=Table.item(row, 2).text()
+    caput(XPV.text(),x)
+    caput(YPV.text(),y)

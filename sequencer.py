@@ -15,5 +15,5 @@ app = QtWidgets.QApplication(sys.argv)
 window = uic.loadUi("sequencer.ui")
 seqConnect.initConnectGUI(window,app) # Make the GUI event-slot connections
 window.show()
-app.exec()
+sys.exit(app.exec())
 
