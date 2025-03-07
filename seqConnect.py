@@ -23,6 +23,9 @@ def initConnectGUI(GUI,app):
     global AppHandle
     AppHandle=app
     
+    global Origin
+    Origin=[0,0]
+    
     # Table
     global Table
     Table=GUI.findChild(QTableWidget, "tableWidgetPosList")
@@ -36,10 +39,18 @@ def initConnectGUI(GUI,app):
     GoToX=GUI.findChild(QLabel, "labelGoToX")
     global GoToY
     GoToY=GUI.findChild(QLabel, "labelGoToY")
-    global XPos
-    XPos=GUIhandle.findChild(QLabel, "labelXPos")
-    global YPos
-    YPos=GUIhandle.findChild(QLabel, "labelYPos")
+    global XPosAbs
+    XPosAbs=GUIhandle.findChild(QLabel, "labelXPosAbs")
+    global XPosOrg
+    XPosOrg=GUIhandle.findChild(QLabel, "labelXPosOrg")
+    global XPosRel
+    XPosRel=GUIhandle.findChild(QLabel, "labelXPosRel")
+    global YPosAbs
+    YPosAbs=GUIhandle.findChild(QLabel, "labelYPosAbs")
+    global YPosOrg
+    YPosOrg=GUIhandle.findChild(QLabel, "labelYPosOrg")    
+    global YPosRel
+    YPosRel=GUIhandle.findChild(QLabel, "labelYPosRel")  
     global Status
     Status=GUI.findChild(QLabel, "labelStatus")
     global ShowTime
@@ -54,7 +65,6 @@ def initConnectGUI(GUI,app):
     FileName=GUI.findChild(QLineEdit, "lineEditSeqFile")
     #sequenceFile="sequence.csv"
     sequenceFile=FileName.text()
-    LoadSequence()
     
     global XPV
     XPV=GUI.findChild(QLineEdit, "lineEditXPV")
@@ -87,6 +97,9 @@ def initConnectGUI(GUI,app):
     global AbortButton
     AbortButton=GUI.findChild(QPushButton, "pushButtonAbort")
     AbortButton.clicked.connect(Abort)
+    global  SetOrgButton
+    SetOrgButton=GUI.findChild(QPushButton, "pushButtonSetOrigin")
+    SetOrgButton.clicked.connect(SetOrigin)
     
     # Check boxes
     global AutoGoto
@@ -96,6 +109,9 @@ def initConnectGUI(GUI,app):
     global Timer
     Timer=QTimer()
     Timer.setSingleShot(True)
+
+# Read in the PVs and table
+    LoadSequence()
 
 # Set monitors going on the X and Y positions
     camonitor(XPV.text(), writer=None, callback=posXchange)
@@ -141,6 +157,15 @@ def LoadSequence():
             for r, Trow in enumerate(seqReader):
                 # print(', '.join(Trow))
                 if r == 0:
+                    motX=Trow[1]
+                    XPV.setText(motX)
+                elif r == 1:
+                    motY=Trow[1]
+                    YPV.setText(motY)
+                elif r == 2:
+                    AD_PV=Trow[1]
+                    ADPV.setText(AD_PV)
+                elif r == 3:
                     Table.setRowCount(1) # First row
                     Table.setHorizontalHeaderLabels(Trow)
                 else:
@@ -150,6 +175,7 @@ def LoadSequence():
                     Table.setItem(row,1,QTableWidgetItem(Trow[1]))
                     Table.setItem(row,2,QTableWidgetItem(Trow[2]))
                     Table.setItem(row,3,QTableWidgetItem(Trow[3]))
+        print('sequence loaded OK')
     except:
         print('Can''t load file: ',sequenceFile)
 
@@ -208,16 +234,20 @@ def Abort():
 #%% Helper functions
 # Callback functions for camonitor...
 def posXchange(value=None, char_value=None, **kw):
-    XPos.setText('%.3f'%value)
+    XPosAbs.setText('%.3f'%value)
+    XPosRel.setText('%.3f'%(value-Origin[0]))
     
 def posYchange(value=None, char_value=None, **kw):
-    YPos.setText('%.3f'%value)
+    YPosAbs.setText('%.3f'%value)
+    YPosRel.setText('%.3f'%(value-Origin[1]))
 
 def UpdatePos(): # Manually update the position
     x=caget(XPV.text())
-    XPos.setText('%.3f'%x)
+    XPosAbs.setText('%.3f'%x)
+    XPosRel.setText('%.3f'%(x-Origin[0]))
     y=caget(YPV.text())
-    YPos.setText('%.3f'%y)
+    YPosAbs.setText('%.3f'%y)
+    YPosRel.setText('%.3f'%(y-Origin[1]))
 
 def shutDown(): # Called when the window is closed.
     caput(ShutterPV+':SHUTTEROPEN_CMD',0) # Close the shutter
@@ -264,7 +294,18 @@ def ShutterEtime(row):
     # caput(ShutterPV+':EXPOSUREREPEATS_CMD',1) # Set for a single cycle
     
 def GotoPos(row):
-    x=Table.item(row, 1).text()
-    y=Table.item(row, 2).text()
-    caput(XPV.text(),x)
-    caput(YPV.text(),y)
+    xRel=Table.item(row, 1).text()
+    yRel=Table.item(row, 2).text()
+    xAbs=float(xRel)+Origin[0]
+    yAbs=float(yRel)+Origin[1]
+    caput(XPV.text(),xAbs)
+    caput(YPV.text(),yAbs)
+
+def SetOrigin():
+    global Origin
+    X=float(XPosAbs.text())
+    Y=float(YPosAbs.text())
+    Origin=[X,Y]
+    XPosOrg.setText('%.3f'%X)
+    YPosOrg.setText('%.3f'%Y)
+    
