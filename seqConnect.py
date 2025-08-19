@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
 Created on Tue Jan 14 15:05:05 2025
-
-@author: imbl
+Routines to connect the GUI widgets to actions.
+@author: imbl (CH)
 """
 
 from PyQt5.QtWidgets import QPushButton, QLineEdit, QLabel, QCheckBox
@@ -26,7 +26,10 @@ def initConnectGUI(GUI,app):
     global Origin
     Origin=[0,0]
     
-    # Table
+    global ShutterPV
+    ShutterPV='SR08ID01IS01'
+    
+    # Table widgets
     global Table
     Table=GUI.findChild(QTableWidget, "tableWidgetPosList")
     Table.setRowCount(1)
@@ -34,7 +37,7 @@ def initConnectGUI(GUI,app):
     #Table.setHorizontalHeaderLabels(["Descriptor", "X", "Y"])
     Table.itemClicked.connect(TableClick)
     
-    # Labels
+    # Label widget handles
     global GoToX
     GoToX=GUI.findChild(QLabel, "labelGoToX")
     global GoToY
@@ -59,13 +62,15 @@ def initConnectGUI(GUI,app):
     StartTime=GUI.findChild(QLabel, "labelStartTime")
     global StopTime
     StopTime=GUI.findChild(QLabel, "labelStopTime")
+    global ShutterState
+    ShutterState=GUI.findChild(QLabel, "labelShutterState")
     
-    # Line edits
+    # Line edit widget handles
     global FileName, sequenceFile
     FileName=GUI.findChild(QLineEdit, "lineEditSeqFile")
     #sequenceFile="sequence.csv"
     sequenceFile=FileName.text()
-    
+    # Read only line edits
     global XPV
     XPV=GUI.findChild(QLineEdit, "lineEditXPV")
     global YPV
@@ -73,12 +78,10 @@ def initConnectGUI(GUI,app):
     UpdatePos() # Display the current positions
     global ADPV
     ADPV=GUI.findChild(QLineEdit, "lineEditADPV")
-    global ShutterPV
-    ShutterPV='SR08ID01IS01'
     global SnapTime
     SnapTime=GUI.findChild(QLineEdit, "lineEditSnapTime")
     
-    # Buttons
+    # Button widget handles
     global GoButton
     GoButton=GUI.findChild(QPushButton, "pushButtonGo")
     GoButton.clicked.connect(GoSequence)
@@ -101,7 +104,7 @@ def initConnectGUI(GUI,app):
     SetOrgButton=GUI.findChild(QPushButton, "pushButtonSetOrigin")
     SetOrgButton.clicked.connect(SetOrigin)
     
-    # Check boxes
+    # Check box widget handles
     global AutoGoto
     AutoGoto=GUI.findChild(QCheckBox, "checkBoxAuto")
     
@@ -110,43 +113,47 @@ def initConnectGUI(GUI,app):
     Timer=QTimer()
     Timer.setSingleShot(True)
 
-# Read in the PVs and table
+# Read in the PVs and table from a comma separated values file.
     LoadSequence()
 
-# Set monitors going on the X and Y positions
+# Set up EPICS monitors for the X and Y positions, and the shutter
+    UpdatePos()
     camonitor(XPV.text(), writer=None, callback=posXchange)
     camonitor(YPV.text(), writer=None, callback=posYchange)
+    camonitor(ShutterPV+':SHUTTEROPEN_MONITOR', writer=None, callback=shutterState)
 
 
 #########################################################################
 #%% Event callback functions
 def GoTo():
-    # Reponse to GoTo button click
-    # Move motors to the position in the GoTo labels
-    X=float(GoToX.text())
-    Y=float(GoToY.text())
-    Status.setText('Going to position: {}, {}'.format(X,Y))
+    # Callback for the 'GoTo' button click
+    # Move motors to the positions in the GoTo labels
+    Xrel=float(GoToX.text())
+    Yrel=float(GoToY.text())
+    Status.setText('Going to relative position: {}, {}'.format(Xrel,Yrel))
     XMotorPV=XPV.text()
     YMotorPV=YPV.text()
-    caput(XMotorPV,X)
-    caput(YMotorPV,Y)
+    Xabs=Xrel+Origin[0]
+    Yabs=Yrel+Origin[1]
+    caput(XMotorPV,Xabs)
+    caput(YMotorPV,Yabs)
     Status.setText('Idle')
 
 def GoSequence():
-    # Response to Run sequence button click
+    # Run Sequence button click procedure
     # Move and expose as instruceted in each line of the table.
     Status.setText('Running Sequence')
     # print('Let''s go!')
     try:
         for row in Table.rows():
-            GotoPos(row)
+            GotoRowPos(row)
             ShutterEtime(row) # Blocks until exposure has finished.
             
     except:
         print('Didn''t work!')
     
 def LoadSequence():
-    # Response to Load sequence button click
+    # Response to Load Sequence button click
     # Import the sequence csv file and load into the table.
     sequenceFile=FileName.text()
     print('Loading sequence')
@@ -156,16 +163,16 @@ def LoadSequence():
             Table.setRowCount(0) # Clears the table. Could use the clear() slot
             for r, Trow in enumerate(seqReader):
                 # print(', '.join(Trow))
-                if r == 0:
+                if r == 0: # First row - X motor PV
                     motX=Trow[1]
                     XPV.setText(motX)
-                elif r == 1:
+                elif r == 1: # Second row Y motors PV
                     motY=Trow[1]
                     YPV.setText(motY)
-                elif r == 2:
+                elif r == 2: # Thrid row - detector PV
                     AD_PV=Trow[1]
                     ADPV.setText(AD_PV)
-                elif r == 3:
+                elif r == 3: # Fourth row is the header
                     Table.setRowCount(1) # First row
                     Table.setHorizontalHeaderLabels(Trow)
                 else:
@@ -180,8 +187,9 @@ def LoadSequence():
         print('Can''t load file: ',sequenceFile)
 
 def TableClick():
-    # Response to click on the sequence table.
-    # Copy the row information indicated in the GoTo labels.
+    # Response to a click on the sequence table.
+    # Copy the row information indicated, to the GoTo labels.
+    # If the 'automatic' box is checked then move as well.
     row=Table.currentRow()
     X=Table.item(row, 1).text()
     Y=Table.item(row, 2).text()
@@ -190,12 +198,15 @@ def TableClick():
     GoToX.setText(X)
     GoToY.setText(Y)
     if AutoGoto.isChecked() :
-        GotoPos(row)
+        GotoRowPos(row)
 
 def Snap():
     # Response to a click on the Snap button
-    # Program the detector to drive the shutter and take a snap for a snap time
-    # Assumes the shutter section of AD is set up correctly.
+    # Program the detector to drive the shutter and take a snap for a short snap time
+    
+    # Assumes the shutter section of AD is set up correctly. Might need to trap
+    # errors here for robustness.
+    
     SetSnapEtime()
     ADPVroot=ADPV.text()
     caput(ADPVroot+':CAM:AcquirePeriod', 0) # Set minimum acquire period
@@ -210,8 +221,9 @@ def Snap():
     Status.setText('Snap done')
     
 def Expose():   
-    # Response to click on the Expose button
-    # Set imager running continosly with SnapT exposure
+    # Response to a click on the Expose button
+    # Designed to allow for alignment.
+    # Set imager running continously with a SnapT exposure time
     ADPVroot=ADPV.text()
     caput(ADPVroot+':CAM:ShutterMode', 0) # No shutter control
     SetSnapEtime() # Assume there will be continous monitoring with the detector
@@ -226,22 +238,37 @@ def Expose():
     Status.setText('Exposure done')
     
 def Abort():
+    ADPVroot=ADPV.text()
     caput(ShutterPV+':SHUTTEROPEN_CMD',0) # Close the shutter
+    caput(ADPVroot+':CAM:Acquire', 0) # Stop the detector
     Timer.stop() # Stop the timer
+    XMotorPV=XPV.text()
+    YMotorPV=YPV.text()
+    caput(XMotorPV+'.STOP',1) # Stop both the motions.
+    caput(YMotorPV+'.STOP',1)
     Status.setText('Motion Aborted')
     
 ############################################################################
 #%% Helper functions
 # Callback functions for camonitor...
 def posXchange(value=None, char_value=None, **kw):
+    # Copy the positions into the GUI labels
     XPosAbs.setText('%.3f'%value)
     XPosRel.setText('%.3f'%(value-Origin[0]))
     
 def posYchange(value=None, char_value=None, **kw):
     YPosAbs.setText('%.3f'%value)
     YPosRel.setText('%.3f'%(value-Origin[1]))
+    
+def shutterState(value=None, char_value=None, **kw):
+    state=caget(ShutterPV+':SHUTTEROPEN_MONITOR')
+    if state:    
+        ShutterState.setStyleSheet("background-color: green;")
+    else:
+        ShutterState.setStyleSheet("background-color: red;")
 
-def UpdatePos(): # Manually update the position
+############################################################################
+def UpdatePos(): # Manually update the motor positions
     x=caget(XPV.text())
     XPosAbs.setText('%.3f'%x)
     XPosRel.setText('%.3f'%(x-Origin[0]))
@@ -254,6 +281,8 @@ def shutDown(): # Called when the window is closed.
     Timer.stop() # Stop the timer
     camonitor_clear(XPV.text()) # Stop camonitoring
     camonitor_clear(YPV.text())
+    ADPVroot=ADPV.text()
+    caput(ADPVroot+':CAM:Acquire', 0) # Stop the detector
     
 def SetSnapEtime():
     SnapT=float(SnapTime.text())
@@ -292,8 +321,9 @@ def ShutterEtime(row):
     # caput(ShutterPV+':EXPOSUREPERIOD_CMD',ExpT) # Set the exposure time
     # caput(ShutterPV+':CYCLEPERIOD_CMD',1.1*ExpT) # Set cycle perid 10% longer
     # caput(ShutterPV+':EXPOSUREREPEATS_CMD',1) # Set for a single cycle
-    
-def GotoPos(row):
+
+def GotoRowPos(row):
+    # Drive to the position given by the row in the table.
     xRel=Table.item(row, 1).text()
     yRel=Table.item(row, 2).text()
     xAbs=float(xRel)+Origin[0]
@@ -302,6 +332,7 @@ def GotoPos(row):
     caput(YPV.text(),yAbs)
 
 def SetOrigin():
+    # Set the origin of the relative position table.
     global Origin
     X=float(XPosAbs.text())
     Y=float(YPosAbs.text())
