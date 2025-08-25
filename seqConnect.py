@@ -9,8 +9,31 @@ from PyQt5.QtWidgets import QPushButton, QLineEdit, QLabel, QCheckBox
 # from PyQt5.QtWidgets import QPlainTextEdit, QComboBox
 from PyQt5.QtWidgets import QTableWidget, QTableWidgetItem
 from PyQt5.QtCore import QTimer, QDateTime
-import csv, time
+from functools import partial
+import csv, time, zmq, json
 from epics import caget, caput, camonitor, camonitor_clear
+
+
+class messenger():
+    def __init__(self):
+    # Class object to send work orders over the ZMQ socket
+        self.context = zmq.Context()
+        self.zmq_socket = self.context.socket(zmq.PUSH)
+        self.zmq_socket.bind("tcp://127.0.0.1:5557")
+        
+        self.poller = zmq.Poller()
+        self.poller.register(self.zmq_socket, zmq.POLLOUT) # Register for send readiness   
+   
+    def sendMsg(self, message):
+        # Message sender. Message should be a Dict.
+        if self.poller.poll(1000):
+            self.zmq_socket.send_json(message)
+            return True
+        else:
+            return False
+        # Shutdown manager
+    def close(self):
+        self.zmq_socket.close()
 
 def initConnectGUI(GUI,app):
     # Define the Qt widgets to connect to he GUI
@@ -28,6 +51,10 @@ def initConnectGUI(GUI,app):
     
     global ShutterPV
     ShutterPV='SR08ID01IS01'
+    
+    # Instantiate the messenger
+    global WOsender
+    WOsender=messenger() 
     
     # Table widgets
     global Table
@@ -64,6 +91,14 @@ def initConnectGUI(GUI,app):
     StopTime=GUI.findChild(QLabel, "labelStopTime")
     global ShutterState
     ShutterState=GUI.findChild(QLabel, "labelShutterState")
+    global labFunction1
+    labFunction1=GUI.findChild(QLabel, "labelFunc1")
+    global labFunction2
+    labFunction2=GUI.findChild(QLabel, "labelFunc2")
+    global labFunction3
+    labFunction3=GUI.findChild(QLabel, "labelFunc3")
+    global labFunction4
+    labFunction4=GUI.findChild(QLabel, "labelFunc4")    
     
     # Line edit widget handles
     global FileName, sequenceFile
@@ -103,6 +138,18 @@ def initConnectGUI(GUI,app):
     global  SetOrgButton
     SetOrgButton=GUI.findChild(QPushButton, "pushButtonSetOrigin")
     SetOrgButton.clicked.connect(SetOrigin)
+    global  Func1Button
+    Func1Button=GUI.findChild(QPushButton, "pushButtonFunc1")
+    Func1Button.clicked.connect(partial(Function,1))
+    global  Func2Button
+    Func2Button=GUI.findChild(QPushButton, "pushButtonFunc2")
+    Func2Button.clicked.connect(partial(Function, 2))
+    global  Func3Button
+    Func3Button=GUI.findChild(QPushButton, "pushButtonFunc3")
+    Func3Button.clicked.connect(partial(Function, 3))
+    global  Func4Button
+    Func4Button=GUI.findChild(QPushButton, "pushButtonFunc4")
+    Func4Button.clicked.connect(partial(Function, 4))    
     
     # Check box widget handles
     global AutoGoto
@@ -114,6 +161,8 @@ def initConnectGUI(GUI,app):
     Timer.setSingleShot(True)
 
 # Read in the PVs and table from a comma separated values file.
+    global Functions
+    Functions=['','','','']
     LoadSequence()
 
 # Set up EPICS monitors for the X and Y positions, and the shutter
@@ -149,14 +198,15 @@ def GoSequence():
             GotoRowPos(row)
             ShutterEtime(row) # Blocks until exposure has finished.
             
-    except:
+    except Exception as e:
+        print(e)
         print('Didn''t work!')
     
 def LoadSequence():
     # Response to Load Sequence button click
     # Import the sequence csv file and load into the table.
     sequenceFile=FileName.text()
-    print('Loading sequence')
+    print(f'Loading sequence file: {sequenceFile}')
     try:
         with open(sequenceFile, newline='') as csvfile:
             seqReader = csv.reader(csvfile)
@@ -172,7 +222,20 @@ def LoadSequence():
                 elif r == 2: # Thrid row - detector PV
                     AD_PV=Trow[1]
                     ADPV.setText(AD_PV)
-                elif r == 3: # Fourth row is the header
+                # Set the labels to the functions in the file
+                elif r ==3:
+                    labFunction1.setText(Trow[0])
+                    Functions[0]=Trow[1]
+                elif r ==4:
+                    labFunction2.setText(Trow[0])
+                    Functions[1]=Trow[1]
+                elif r ==5:
+                    labFunction3.setText(Trow[0])
+                    Functions[2]=Trow[1]
+                elif r ==6:
+                    labFunction4.setText(Trow[0])
+                    Functions[3]=Trow[1]
+                elif r == 7: # Fourth row is the header
                     Table.setRowCount(1) # First row
                     Table.setHorizontalHeaderLabels(Trow)
                 else:
@@ -183,7 +246,8 @@ def LoadSequence():
                     Table.setItem(row,2,QTableWidgetItem(Trow[2]))
                     Table.setItem(row,3,QTableWidgetItem(Trow[3]))
         print('sequence loaded OK')
-    except:
+    except Exception as e:
+        print(e)
         print('Can''t load file: ',sequenceFile)
 
 def TableClick():
@@ -283,6 +347,7 @@ def shutDown(): # Called when the window is closed.
     camonitor_clear(YPV.text())
     ADPVroot=ADPV.text()
     caput(ADPVroot+':CAM:Acquire', 0) # Stop the detector
+    WOsender.close()
     
 def SetSnapEtime():
     SnapT=float(SnapTime.text())
@@ -340,3 +405,16 @@ def SetOrigin():
     XPosOrg.setText('%.3f'%X)
     YPosOrg.setText('%.3f'%Y)
     
+def Function(Button):
+    # Handle the function buttons
+    try:
+        WO=json.loads(Functions[Button-1])
+        print(f'This button will send {WO}')
+    except Exception as e:
+        print (e)
+        return
+    if (WOsender.sendMsg(WO)):
+        print('Work order message sent OK')
+    else:
+        print('Work order message failed or timed out')
+

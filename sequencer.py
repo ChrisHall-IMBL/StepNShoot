@@ -9,15 +9,43 @@ See the documentation for use.
 @author: imbl(CH)
 """
 
+
+
+from PyQt5.QtWidgets import QApplication, QMainWindow, QMessageBox
+from PyQt5.QtCore import QCoreApplication
+from PyQt5 import uic
 import sys
-from PyQt5 import QtWidgets, uic
 import seqConnect
 
+class SeqMainWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        uic.loadUi("sequencer.ui",self)
+        self.setWindowTitle("Chip irradition sequencer")
 
-app = QtWidgets.QApplication(sys.argv)
+    def closeEvent(self, event):
+        """
+        Overrides the close event to handle application exit.
+        """
+        reply = QMessageBox.question(self, 'Message',
+                                     "Are you sure to quit?", QMessageBox.Yes |
+                                     QMessageBox.No, QMessageBox.No)
 
-window = uic.loadUi("sequencer.ui")
-seqConnect.initConnectGUI(window,app) # Make the GUI event-slot connections
-window.show()
-sys.exit(app.exec())
+        if reply == QMessageBox.Yes:
+            seqConnect.shutDown()
+            event.accept()  # Allow the window to close
+            print("Application closing...")
+            # Perform any cleanup here before the application fully exits
+            QCoreApplication.instance().quit() # Ensure the application quits
+        else:
+            event.ignore()  # Prevent the window from closing
+
+if __name__ == "__main__":
+    app =  QApplication(sys.argv)
+    # window = uic.loadUi("sequencer.ui")
+    # SeqMainWindow = uic.loadUi("sequencer.ui")
+    window=SeqMainWindow()
+    seqConnect.initConnectGUI(window,app) # Make the GUI event-slot connections
+    window.show()
+    sys.exit(app.exec())
 
