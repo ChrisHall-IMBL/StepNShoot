@@ -28,10 +28,12 @@ class SeqMainWindow(QMainWindow):
         Overrides the close event to handle application exit.
         """
         reply = QMessageBox.question(self, 'Message',
-                                     "Are you sure to quit?", QMessageBox.Yes |
-                                     QMessageBox.No, QMessageBox.No)
+        "Are you sure to want to quit?", QMessageBox.Yes |
+        QMessageBox.No, QMessageBox.No)
 
         if reply == QMessageBox.Yes:
+            QMessageBox.warning(self, 'Please wait', \
+                    'Channel Access is closing down...')
             seqConnect.shutDown()
             event.accept()  # Allow the window to close
             print("Application closing...")

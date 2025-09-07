@@ -26,7 +26,7 @@ class messenger():
    
     def sendMsg(self, message):
         # Message sender. Message should be a Dict.
-        if self.poller.poll(1000):
+        if self.poller.poll(2000):
             self.zmq_socket.send_json(message)
             return True
         else:
@@ -91,14 +91,7 @@ def initConnectGUI(GUI,app):
     StopTime=GUI.findChild(QLabel, "labelStopTime")
     global ShutterState
     ShutterState=GUI.findChild(QLabel, "labelShutterState")
-    global labFunction1
-    labFunction1=GUI.findChild(QLabel, "labelFunc1")
-    global labFunction2
-    labFunction2=GUI.findChild(QLabel, "labelFunc2")
-    global labFunction3
-    labFunction3=GUI.findChild(QLabel, "labelFunc3")
-    global labFunction4
-    labFunction4=GUI.findChild(QLabel, "labelFunc4")    
+ 
     
     # Line edit widget handles
     global FileName, sequenceFile
@@ -224,16 +217,16 @@ def LoadSequence():
                     ADPV.setText(AD_PV)
                 # Set the labels to the functions in the file
                 elif r ==3:
-                    labFunction1.setText(Trow[0])
+                    Func1Button.setText(Trow[0])
                     Functions[0]=Trow[1]
                 elif r ==4:
-                    labFunction2.setText(Trow[0])
+                    Func2Button.setText(Trow[0])
                     Functions[1]=Trow[1]
                 elif r ==5:
-                    labFunction3.setText(Trow[0])
+                    Func3Button.setText(Trow[0])
                     Functions[2]=Trow[1]
                 elif r ==6:
-                    labFunction4.setText(Trow[0])
+                    Func4Button.setText(Trow[0])
                     Functions[3]=Trow[1]
                 elif r == 7: # Fourth row is the header
                     Table.setRowCount(1) # First row
