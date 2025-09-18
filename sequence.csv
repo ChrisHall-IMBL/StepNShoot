@@ -1,7 +1,7 @@
 MotorX,SR08ID01SST02:Y
 MotorY,SR08ID01SST02:Z
 AD_PV,SR08ID01DETIOC10
-Read DUT, {"command":"readDUT"}
+Read DUT, {"command":"read SRAM"}
 Capture scope, {"command":"scopeCap"}
 Toggle shutter, {"shutter":"toggle"}
 Stop acquisition, {"command":"stop"}
